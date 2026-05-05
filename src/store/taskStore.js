@@ -11,7 +11,10 @@ const useTaskStore = create(
       tasks: [],
       categories: ['Work', 'Personal', 'Health', 'Learning', 'Errands'],
       selectedTasks: [], // For bulk operations
+      searchQuery: '',
       isFirebaseInitialized: false,
+
+      setSearchQuery: (query) => set({ searchQuery: query }),
 
       initFirebase: () => {
         if (get().isFirebaseInitialized) return;
@@ -42,6 +45,7 @@ const useTaskStore = create(
           isMultiDay: taskData.isMultiDay || false,
           completedDates: taskData.completedDates || [],
           delayedDays: 0,
+          actions: taskData.actions || [],
         };
         
         // Optimistic UI update
@@ -63,6 +67,46 @@ const useTaskStore = create(
           await updateDoc(doc(db, 'tasks', id), updates);
         } catch (e) {
           console.error("Failed to sync task update to Firebase", e);
+        }
+      },
+
+      addTaskAction: async (taskId, text) => {
+        const task = get().tasks.find(t => t.id === taskId);
+        if (!task) return;
+
+        const newAction = {
+          id: uuidv4(),
+          text,
+          timestamp: new Date().toISOString()
+        };
+
+        const updatedActions = [...(task.actions || []), newAction];
+        
+        set((state) => ({
+          tasks: state.tasks.map(t => t.id === taskId ? { ...t, actions: updatedActions } : t)
+        }));
+
+        try {
+          await updateDoc(doc(db, 'tasks', taskId), { actions: updatedActions });
+        } catch (e) {
+          console.error("Failed to add task action to Firebase", e);
+        }
+      },
+
+      deleteTaskAction: async (taskId, actionId) => {
+        const task = get().tasks.find(t => t.id === taskId);
+        if (!task) return;
+
+        const updatedActions = (task.actions || []).filter(a => a.id !== actionId);
+        
+        set((state) => ({
+          tasks: state.tasks.map(t => t.id === taskId ? { ...t, actions: updatedActions } : t)
+        }));
+
+        try {
+          await updateDoc(doc(db, 'tasks', taskId), { actions: updatedActions });
+        } catch (e) {
+          console.error("Failed to delete task action from Firebase", e);
         }
       },
       
@@ -225,13 +269,33 @@ const useTaskStore = create(
         }
       },
 
-      // Add category
+      // Category Management
       addCategory: (cat) => set((state) => {
         if(!state.categories.includes(cat)) {
           return { categories: [...state.categories, cat] };
         }
         return state;
-      })
+      }),
+      
+      removeCategory: (cat) => set((state) => ({
+        categories: state.categories.filter(c => c !== cat)
+      })),
+
+      // Data Management
+      clearAllTasks: async () => {
+        const tasks = get().tasks;
+        set({ tasks: [], selectedTasks: [] });
+
+        try {
+          const batch = writeBatch(db);
+          tasks.forEach(t => {
+            batch.delete(doc(db, 'tasks', t.id));
+          });
+          await batch.commit();
+        } catch (e) {
+          console.error("Failed to clear tasks from Firebase", e);
+        }
+      }
     }),
     {
       name: 'task-storage', // Save state to localStorage

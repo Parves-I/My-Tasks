@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { X, Trash2 } from 'lucide-react';
+import { X, Trash2, Send, Clock } from 'lucide-react';
 import useTaskStore from '../../store/taskStore';
 import { format } from 'date-fns';
+import { v4 as uuidv4 } from 'uuid';
 import './Tasks.css';
 
 const TaskModal = ({ onClose, initialDate, task = null }) => {
@@ -9,6 +10,8 @@ const TaskModal = ({ onClose, initialDate, task = null }) => {
   const updateTask = useTaskStore(state => state.updateTask);
   const deleteTask = useTaskStore(state => state.deleteTask);
   const categories = useTaskStore(state => state.categories);
+
+  const [newActionText, setNewActionText] = useState('');
 
   const [formData, setFormData] = useState({
     title: '',
@@ -19,6 +22,7 @@ const TaskModal = ({ onClose, initialDate, task = null }) => {
     startDate: initialDate ? format(initialDate, "yyyy-MM-dd'T'HH:mm") : format(new Date(), "yyyy-MM-dd'T'HH:mm"),
     dueDate: initialDate ? format(initialDate, "yyyy-MM-dd'T'HH:mm") : format(new Date(), "yyyy-MM-dd'T'HH:mm"),
     isMultiDay: false,
+    actions: []
   });
 
   useEffect(() => {
@@ -32,6 +36,7 @@ const TaskModal = ({ onClose, initialDate, task = null }) => {
         startDate: format(new Date(task.startDate), "yyyy-MM-dd'T'HH:mm"),
         dueDate: format(new Date(task.dueDate), "yyyy-MM-dd'T'HH:mm"),
         isMultiDay: task.isMultiDay,
+        actions: task.actions || []
       });
     }
   }, [task]);
@@ -41,6 +46,30 @@ const TaskModal = ({ onClose, initialDate, task = null }) => {
     setFormData(prev => ({
       ...prev,
       [name]: type === 'checkbox' ? checked : value
+    }));
+  };
+
+  const handleAddAction = (e) => {
+    e.preventDefault();
+    if (!newActionText.trim()) return;
+
+    const newAction = {
+      id: uuidv4(),
+      text: newActionText.trim(),
+      timestamp: new Date().toISOString()
+    };
+
+    setFormData(prev => ({
+      ...prev,
+      actions: [...prev.actions, newAction]
+    }));
+    setNewActionText('');
+  };
+
+  const handleRemoveAction = (actionId) => {
+    setFormData(prev => ({
+      ...prev,
+      actions: prev.actions.filter(a => a.id !== actionId)
     }));
   };
 
@@ -130,8 +159,55 @@ const TaskModal = ({ onClose, initialDate, task = null }) => {
               value={formData.description} 
               onChange={handleChange} 
               placeholder="Add details..."
-              rows="3"
+              rows="2"
             ></textarea>
+          </div>
+
+          {/* Action Log Section */}
+          <div className="form-group actions-log-section">
+            <label>Action Log</label>
+            
+            <div className="actions-list">
+              {formData.actions.length === 0 ? (
+                <div className="no-actions">No actions recorded yet.</div>
+              ) : (
+                formData.actions.map(action => (
+                  <div key={action.id} className="action-item">
+                    <div className="action-header">
+                      <div className="action-time">
+                        <Clock size={12} />
+                        {format(new Date(action.timestamp), "MMM d, h:mm a")}
+                      </div>
+                      <button 
+                        type="button" 
+                        className="delete-action-btn"
+                        onClick={() => handleRemoveAction(action.id)}
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                    <div className="action-text">{action.text}</div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="add-action-form">
+              <input 
+                type="text" 
+                value={newActionText}
+                onChange={(e) => setNewActionText(e.target.value)}
+                placeholder="What action did you take?"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    handleAddAction(e);
+                  }
+                }}
+              />
+              <button type="button" className="btn-secondary add-action-btn" onClick={handleAddAction}>
+                <Send size={16} />
+              </button>
+            </div>
           </div>
 
           <div className="modal-footer">

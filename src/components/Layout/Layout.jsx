@@ -1,12 +1,18 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { NavLink } from 'react-router-dom';
-import { Calendar, BarChart3, Settings, CheckSquare, Plus } from 'lucide-react';
+import { Calendar, BarChart3, Settings as SettingsIcon, CheckSquare, Plus } from 'lucide-react';
 import './Layout.css';
 import useTaskStore from '../../store/taskStore';
+import SettingsModal from '../Settings/SettingsModal';
 
 const Layout = ({ children }) => {
   const tasks = useTaskStore((state) => state.tasks);
   const pendingTasks = tasks.filter(t => t.status !== 'done').length;
+  
+  const searchQuery = useTaskStore((state) => state.searchQuery);
+  const setSearchQuery = useTaskStore((state) => state.setSearchQuery);
+  
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   return (
     <div className="layout-container">
@@ -30,8 +36,8 @@ const Layout = ({ children }) => {
 
           <div className="nav-divider"></div>
 
-          <button className="nav-item">
-            <Settings size={20} />
+          <button className="nav-item" onClick={() => setIsSettingsOpen(true)}>
+            <SettingsIcon size={20} />
             <span>Settings</span>
           </button>
         </nav>
@@ -48,7 +54,12 @@ const Layout = ({ children }) => {
       <main className="main-content">
         <header className="top-header glass-panel">
           <div className="header-search">
-            <input type="text" placeholder="Search tasks, categories..." />
+            <input 
+              type="text" 
+              placeholder="Search tasks, categories..." 
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
           </div>
           <div className="header-actions">
             <button className="btn-primary" onClick={() => window.dispatchEvent(new CustomEvent('open-task-modal'))}>
@@ -62,6 +73,8 @@ const Layout = ({ children }) => {
           {children}
         </div>
       </main>
+
+      {isSettingsOpen && <SettingsModal onClose={() => setIsSettingsOpen(false)} />}
     </div>
   );
 };

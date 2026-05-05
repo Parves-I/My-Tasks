@@ -1,31 +1,45 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { 
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, 
   PieChart, Pie, Cell, LineChart, Line, CartesianGrid
 } from 'recharts';
-import { format, subDays, startOfDay, isSameDay } from 'date-fns';
+import { format, subDays, startOfDay, isSameDay, isWithinInterval, startOfMonth, endOfMonth, startOfYear, endOfYear } from 'date-fns';
 import useTaskStore from '../../store/taskStore';
 import './Dashboard.css';
-import { CheckCircle, Clock, Target, Flame } from 'lucide-react';
+import { CheckCircle, Clock, Target, Flame, Calendar as CalendarIcon } from 'lucide-react';
 
 const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
 
 const ProductivityDashboard = () => {
   const tasks = useTaskStore(state => state.tasks);
+  const [timeRange, setTimeRange] = useState('7days'); // '7days', 'month', 'year'
+
+  const today = startOfDay(new Date());
+
+  // Filter tasks based on selected range
+  const filteredTasks = useMemo(() => {
+    return tasks.filter(t => {
+      const taskDate = new Date(t.dueDate);
+      if (timeRange === '7days') {
+        return isWithinInterval(taskDate, { start: subDays(today, 6), end: new Date(today.getTime() + 86400000 - 1) });
+      } else if (timeRange === 'month') {
+        return isWithinInterval(taskDate, { start: startOfMonth(today), end: endOfMonth(today) });
+      } else if (timeRange === 'year') {
+        return isWithinInterval(taskDate, { start: startOfYear(today), end: endOfYear(today) });
+      }
+      return true;
+    });
+  }, [tasks, timeRange, today]);
 
   // Compute metrics
-  const totalTasks = tasks.length;
-  const completedTasks = tasks.filter(t => t.status === 'done').length;
+  const totalTasks = filteredTasks.length;
+  const completedTasks = filteredTasks.filter(t => t.status === 'done').length;
   const completionRate = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
-  
-  // Tasks completed today
-  const today = startOfDay(new Date());
-  const completedToday = tasks.filter(t => t.status === 'done' && isSameDay(new Date(t.dueDate), today)).length;
   
   // Category distribution
   const categoryData = useMemo(() => {
     const counts = {};
-    tasks.forEach(t => {
+    filteredTasks.forEach(t => {
       counts[t.category] = (counts[t.category] || 0) + 1;
     });
     return Object.keys(counts).map((key, index) => ({
@@ -33,25 +47,73 @@ const ProductivityDashboard = () => {
       value: counts[key],
       color: COLORS[index % COLORS.length]
     }));
-  }, [tasks]);
+  }, [filteredTasks]);
 
-  // Last 7 days activity
-  const weeklyData = useMemo(() => {
+  // Dynamic Activity Line Chart Data
+  const chartData = useMemo(() => {
     const data = [];
-    for (let i = 6; i >= 0; i--) {
-      const date = subDays(today, i);
-      const dayTasks = tasks.filter(t => isSameDay(new Date(t.dueDate), date));
-      data.push({
-        name: format(date, 'EEE'),
-        completed: dayTasks.filter(t => t.status === 'done').length,
-        added: dayTasks.length
-      });
+    if (timeRange === '7days') {
+      for (let i = 6; i >= 0; i--) {
+        const date = subDays(today, i);
+        const periodTasks = tasks.filter(t => isSameDay(new Date(t.dueDate), date));
+        data.push({
+          name: format(date, 'EEE'),
+          completed: periodTasks.filter(t => t.status === 'done').length,
+          added: periodTasks.length
+        });
+      }
+    } else if (timeRange === 'month') {
+      const daysInMonth = endOfMonth(today).getDate();
+      for(let i=1; i<=daysInMonth; i+=3) { // Group every 3 days to avoid too many points
+        const date = new Date(today.getFullYear(), today.getMonth(), i);
+        const periodTasks = tasks.filter(t => {
+           const d = new Date(t.dueDate);
+           return d.getMonth() === today.getMonth() && d.getDate() >= i && d.getDate() < i + 3;
+        });
+        data.push({
+          name: format(date, 'd MMM'),
+          completed: periodTasks.filter(t => t.status === 'done').length,
+          added: periodTasks.length
+        });
+      }
+    } else if (timeRange === 'year') {
+      for(let i=0; i<12; i++) {
+        const date = new Date(today.getFullYear(), i, 1);
+        const periodTasks = tasks.filter(t => {
+           const d = new Date(t.dueDate);
+           return d.getMonth() === i && d.getFullYear() === today.getFullYear();
+        });
+        data.push({
+          name: format(date, 'MMM'),
+          completed: periodTasks.filter(t => t.status === 'done').length,
+          added: periodTasks.length
+        });
+      }
     }
     return data;
-  }, [tasks, today]);
+  }, [tasks, timeRange, today]);
+
+  const rangeLabel = timeRange === '7days' ? 'Last 7 Days' : timeRange === 'month' ? 'This Month' : 'This Year';
 
   return (
     <div className="dashboard-container">
+      <div className="dashboard-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+        <h2>Productivity Overview</h2>
+        
+        <div className="dashboard-filter" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'var(--glass-bg)', padding: '0.5rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--glass-border)' }}>
+          <CalendarIcon size={18} style={{ color: 'var(--text-muted)' }} />
+          <select 
+            value={timeRange} 
+            onChange={(e) => setTimeRange(e.target.value)}
+            style={{ background: 'transparent', border: 'none', color: 'var(--text-primary)', outline: 'none', cursor: 'pointer', fontSize: '0.95rem' }}
+          >
+            <option value="7days">Last 7 Days</option>
+            <option value="month">This Month</option>
+            <option value="year">This Year</option>
+          </select>
+        </div>
+      </div>
+
       {/* Stats row */}
       <div className="stats-grid">
         <div className="stat-card glass-panel">
@@ -70,9 +132,9 @@ const ProductivityDashboard = () => {
             <Target size={24} />
           </div>
           <div className="stat-content">
-            <h3>Completed Today</h3>
-            <div className="stat-value">{completedToday}</div>
-            <p className="text-muted">Great job staying on track!</p>
+            <h3>Tasks Completed</h3>
+            <div className="stat-value">{completedTasks}</div>
+            <p className="text-muted">In {rangeLabel.toLowerCase()}</p>
           </div>
         </div>
 
@@ -81,20 +143,20 @@ const ProductivityDashboard = () => {
             <Flame size={24} />
           </div>
           <div className="stat-content">
-            <h3>Current Streak</h3>
-            <div className="stat-value">3 Days</div>
-            <p className="text-muted">Keep the momentum going</p>
+            <h3>Total Scheduled</h3>
+            <div className="stat-value">{totalTasks}</div>
+            <p className="text-muted">In {rangeLabel.toLowerCase()}</p>
           </div>
         </div>
       </div>
 
       <div className="charts-grid">
-        {/* Weekly Activity Line Chart */}
+        {/* Activity Line Chart */}
         <div className="chart-card glass-panel">
-          <h3>Weekly Activity</h3>
+          <h3>Activity Trend ({rangeLabel})</h3>
           <div className="chart-wrapper">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={weeklyData}>
+              <LineChart data={chartData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
                 <XAxis dataKey="name" stroke="var(--text-muted)" />
                 <YAxis stroke="var(--text-muted)" />
@@ -102,7 +164,7 @@ const ProductivityDashboard = () => {
                   contentStyle={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--glass-border)', borderRadius: '8px' }}
                 />
                 <Line type="monotone" dataKey="completed" name="Completed" stroke="var(--accent-success)" strokeWidth={3} dot={{r: 4}} />
-                <Line type="monotone" dataKey="added" name="Added" stroke="var(--accent-primary)" strokeWidth={3} dot={{r: 4}} />
+                <Line type="monotone" dataKey="added" name="Added/Scheduled" stroke="var(--accent-primary)" strokeWidth={3} dot={{r: 4}} />
               </LineChart>
             </ResponsiveContainer>
           </div>
@@ -110,7 +172,7 @@ const ProductivityDashboard = () => {
 
         {/* Category Breakdown Pie Chart */}
         <div className="chart-card glass-panel">
-          <h3>Tasks by Category</h3>
+          <h3>Categories ({rangeLabel})</h3>
           <div className="chart-wrapper">
             {categoryData.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
@@ -134,7 +196,7 @@ const ProductivityDashboard = () => {
                 </PieChart>
               </ResponsiveContainer>
             ) : (
-              <div className="empty-chart">No tasks available</div>
+              <div className="empty-chart">No tasks available in this period</div>
             )}
             
             <div className="chart-legend">

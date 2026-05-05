@@ -99,3 +99,173 @@
   color: var(--text-primary);
   border-color: var(--text-secondary);
 }
+/* Calendar View Toggle & Navigation */
+.calendar-title-group {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+}
+
+.view-toggle {
+  display: flex;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: var(--radius-md);
+  padding: 4px;
+}
+
+.view-toggle button {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  padding: 0.25rem 0.75rem;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.view-toggle button.active {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+
+.calendar-date-picker {
+  padding: 0.4rem 0.75rem;
+  font-size: 0.85rem;
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  outline: none;
+  cursor: pointer;
+  margin-left: 0.5rem;
+}
+
+.calendar-date-picker::-webkit-calendar-picker-indicator {
+  filter: invert(1);
+  cursor: pointer;
+  opacity: 0.6;
+}
+
+.calendar-date-picker::-webkit-calendar-picker-indicator:hover {
+  opacity: 1;
+}
+
+/* Month Grid Styles */
+.month-grid {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.month-grid-header {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  border-bottom: 1px solid var(--glass-border);
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.month-header-cell {
+  padding: 0.75rem;
+  text-align: center;
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.month-grid-body {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  flex: 1;
+}
+
+.month-day-cell {
+  border-right: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  min-height: 100px;
+  padding: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  transition: background 0.2s;
+  cursor: pointer;
+}
+
+.month-day-cell:nth-child(7n) {
+  border-right: none;
+}
+
+.month-day-cell:hover {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.month-day-cell.different-month {
+  background: rgba(0, 0, 0, 0.2);
+  opacity: 0.5;
+}
+
+.month-day-cell.is-today .month-day-number {
+  background: var(--accent-primary);
+  color: white;
+  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.month-day-number {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin-bottom: 0.5rem;
+  align-self: flex-end;
+}
+
+.month-tasks-container {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+}
+
+.month-task-pill {
+  font-size: 0.7rem;
+  padding: 2px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-primary);
+  transition: all 0.2s;
+}
+
+.month-task-pill:hover {
+  filter: brightness(1.2);
+}
+
+.month-task-pill.is-done {
+  opacity: 0.5;
+  text-decoration: line-through;
+}
+
+.month-task-pill.priority-high { border-left: 2px solid var(--accent-warning); }
+.month-task-pill.priority-urgent { border-left: 2px solid var(--accent-danger); }
+
+.month-task-more {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  text-align: center;
+  margin-top: 2px;
+  font-style: italic;
+}
