@@ -13,7 +13,9 @@ const TaskItem = ({ task, onEdit, currentDate }) => {
   const isSelected = selectedTasks.includes(task.id);
   const isMultiDay = task.isMultiDay || new Date(task.startDate).toDateString() !== new Date(task.dueDate).toDateString();
   const today = startOfDay(new Date());
-  const isOverdue = task.status !== 'done' && isBefore(new Date(task.dueDate), today);
+  const dueDate = new Date(task.dueDate);
+  const isOverdue = task.status !== 'done' && isBefore(dueDate, today);
+  const overdueDays = isOverdue ? Math.floor((today - startOfDay(dueDate)) / (1000 * 60 * 60 * 24)) : 0;
 
   const toggleStatus = (e) => {
     e.stopPropagation();
@@ -62,7 +64,7 @@ const TaskItem = ({ task, onEdit, currentDate }) => {
           
           {isOverdue && (
             <span className="task-badge danger">
-              <AlertCircle size={12} /> Overdue
+              <AlertCircle size={12} /> Overdue by {overdueDays} {overdueDays === 1 ? 'day' : 'days'}
             </span>
           )}
           

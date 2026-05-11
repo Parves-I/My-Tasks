@@ -44,10 +44,16 @@ const useTaskStore = create(
           createdAt: new Date().toISOString(),
           isMultiDay: taskData.isMultiDay || false,
           completedDates: taskData.completedDates || [],
+          completedAt: taskData.status === 'done' ? new Date().toISOString() : null,
           delayedDays: 0,
           actions: taskData.actions || [],
         };
         
+        
+        if (isBefore(new Date(newTask.dueDate), new Date(newTask.startDate))) {
+          newTask.dueDate = newTask.startDate;
+        }
+
         // Optimistic UI update
         set((state) => ({ tasks: [...state.tasks, newTask] }));
         
@@ -59,6 +65,25 @@ const useTaskStore = create(
       },
 
       updateTask: async (id, updates) => {
+        if (updates.startDate || updates.dueDate) {
+          const task = get().tasks.find(t => t.id === id);
+          if (task) {
+            const start = updates.startDate || task.startDate;
+            const due = updates.dueDate || task.dueDate;
+            if (isBefore(new Date(due), new Date(start))) {
+              updates.dueDate = start;
+            }
+          }
+        }
+
+        if (updates.status !== undefined) {
+          if (updates.status === 'done') {
+            updates.completedAt = new Date().toISOString();
+          } else {
+            updates.completedAt = null;
+          }
+        }
+
         set((state) => ({
           tasks: state.tasks.map(t => t.id === id ? { ...t, ...updates } : t)
         }));
@@ -150,6 +175,12 @@ const useTaskStore = create(
         }
 
         const updates = { status: newStatus, completedDates: newCompletedDates };
+        
+        if (newStatus === 'done') {
+          updates.completedAt = new Date().toISOString();
+        } else {
+          updates.completedAt = null;
+        }
         
         // Optimistic UI update
         set((state) => ({

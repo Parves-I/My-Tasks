@@ -11,9 +11,6 @@ import './Calendar.css';
 const CalendarView = () => {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [viewMode, setViewMode] = useState('week'); // 'week' | 'month'
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingTask, setEditingTask] = useState(null);
-  const [selectedDate, setSelectedDate] = useState(null);
   const [detailedDate, setDetailedDate] = useState(null);
   
   const tasks = useTaskStore((state) => state.tasks);
@@ -51,21 +48,8 @@ const CalendarView = () => {
   const prevPeriod = () => setCurrentDate(viewMode === 'week' ? addDays(currentDate, -7) : addMonths(currentDate, -1));
   const today = () => setCurrentDate(new Date());
 
-  // Listen to custom event from layout header
-  React.useEffect(() => {
-    const handleOpenModal = () => {
-      setEditingTask(null);
-      setSelectedDate(new Date());
-      setIsModalOpen(true);
-    };
-    window.addEventListener('open-task-modal', handleOpenModal);
-    return () => window.removeEventListener('open-task-modal', handleOpenModal);
-  }, []);
-
   const openTaskModal = (date = new Date(), task = null) => {
-    setEditingTask(task);
-    setSelectedDate(date);
-    setIsModalOpen(true);
+    window.dispatchEvent(new CustomEvent('open-task-modal', { detail: { date, task } }));
   };
 
   return (
@@ -168,13 +152,6 @@ const CalendarView = () => {
         />
       )}
 
-      {isModalOpen && (
-        <TaskModal 
-          onClose={() => setIsModalOpen(false)} 
-          initialDate={selectedDate}
-          task={editingTask}
-        />
-      )}
     </div>
   );
 };

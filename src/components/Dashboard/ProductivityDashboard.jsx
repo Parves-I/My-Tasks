@@ -3,10 +3,10 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, 
   PieChart, Pie, Cell, LineChart, Line, CartesianGrid
 } from 'recharts';
-import { format, subDays, startOfDay, isSameDay, isWithinInterval, startOfMonth, endOfMonth, startOfYear, endOfYear } from 'date-fns';
+import { format, subDays, startOfDay, isBefore, isSameDay, isWithinInterval, startOfMonth, endOfMonth, startOfYear, endOfYear } from 'date-fns';
 import useTaskStore from '../../store/taskStore';
 import './Dashboard.css';
-import { CheckCircle, Clock, Target, Flame, Calendar as CalendarIcon } from 'lucide-react';
+import { CheckCircle, Clock, Target, Flame, Calendar as CalendarIcon, AlertCircle } from 'lucide-react';
 
 const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
 
@@ -47,6 +47,64 @@ const ProductivityDashboard = () => {
       value: counts[key],
       color: COLORS[index % COLORS.length]
     }));
+  }, [filteredTasks]);
+
+  // Timeliness Data (On Time vs Late)
+  const timelinessData = useMemo(() => {
+    let onTime = 0;
+    let late = 0;
+    filteredTasks.forEach(t => {
+      if (t.status === 'done') {
+        const due = startOfDay(new Date(t.dueDate));
+        const completed = t.completedAt ? startOfDay(new Date(t.completedAt)) : startOfDay(new Date());
+        if (isBefore(due, completed) || t.delayedDays > 0) {
+          late++;
+        } else {
+          onTime++;
+        }
+      }
+    });
+    return [
+      { name: 'On Time', value: onTime, color: '#10b981' },
+      { name: 'Late/Delayed', value: late, color: '#ef4444' }
+    ];
+  }, [filteredTasks]);
+
+  // Category Delay Analysis
+  const categoryDelayData = useMemo(() => {
+    const delayMap = {};
+    filteredTasks.forEach(t => {
+      if (!delayMap[t.category]) {
+        delayMap[t.category] = { totalDelay: 0, count: 0 };
+      }
+      delayMap[t.category].count++;
+      delayMap[t.category].totalDelay += (t.delayedDays || 0);
+    });
+    
+    return Object.keys(delayMap).map(category => ({
+      name: category,
+      avgDelay: delayMap[category].count > 0 
+        ? Number((delayMap[category].totalDelay / delayMap[category].count).toFixed(1)) 
+        : 0
+    })).sort((a, b) => b.avgDelay - a.avgDelay);
+  }, [filteredTasks]);
+
+  // Action Funnel (Skipped/Delayed vs Completed)
+  const actionFunnelData = useMemo(() => {
+    let carriedForward = 0;
+    let completed = 0;
+    filteredTasks.forEach(t => {
+      if (t.wasCarriedForward || t.delayedDays > 0) {
+        carriedForward++;
+      }
+      if (t.status === 'done') {
+        completed++;
+      }
+    });
+    return [
+      { name: 'Completed', value: completed, fill: '#6366f1' },
+      { name: 'Skipped / Delayed', value: carriedForward, fill: '#f59e0b' }
+    ];
   }, [filteredTasks]);
 
   // Dynamic Activity Line Chart Data
@@ -148,11 +206,22 @@ const ProductivityDashboard = () => {
             <p className="text-muted">In {rangeLabel.toLowerCase()}</p>
           </div>
         </div>
+
+        <div className="stat-card glass-panel">
+          <div className="stat-icon" style={{background: 'rgba(239, 68, 68, 0.1)', color: 'var(--danger-color)'}}>
+            <AlertCircle size={24} />
+          </div>
+          <div className="stat-content">
+            <h3>Overdue / Delayed</h3>
+            <div className="stat-value">{filteredTasks.filter(t => t.delayedDays > 0 || (t.status !== 'done' && isBefore(new Date(t.dueDate), today))).length}</div>
+            <p className="text-muted">In {rangeLabel.toLowerCase()}</p>
+          </div>
+        </div>
       </div>
 
       <div className="charts-grid">
         {/* Activity Line Chart */}
-        <div className="chart-card glass-panel">
+        <div className="chart-card glass-panel full-width">
           <h3>Activity Trend ({rangeLabel})</h3>
           <div className="chart-wrapper">
             <ResponsiveContainer width="100%" height="100%">
@@ -207,6 +276,87 @@ const ProductivityDashboard = () => {
                 </div>
               ))}
             </div>
+          </div>
+        </div>
+
+        {/* Timeliness Pie Chart */}
+        <div className="chart-card glass-panel">
+          <h3>Completion Timeliness</h3>
+          <div className="chart-wrapper">
+            {timelinessData.some(d => d.value > 0) ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={timelinessData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={60}
+                    outerRadius={80}
+                    paddingAngle={5}
+                    dataKey="value"
+                  >
+                    {timelinessData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip 
+                    contentStyle={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--glass-border)', borderRadius: '8px' }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="empty-chart">No completed tasks</div>
+            )}
+            <div className="chart-legend">
+              {timelinessData.map(c => (
+                <div key={c.name} className="legend-item">
+                  <span className="legend-color" style={{backgroundColor: c.color}}></span>
+                  <span className="legend-label">{c.name} ({c.value})</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Category Delay Chart */}
+        <div className="chart-card glass-panel">
+          <h3>Avg Delay by Category (Days)</h3>
+          <div className="chart-wrapper">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={categoryDelayData} layout="vertical" margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" horizontal={false} />
+                <XAxis type="number" stroke="var(--text-muted)" />
+                <YAxis dataKey="name" type="category" stroke="var(--text-muted)" width={80} />
+                <Tooltip 
+                  contentStyle={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--glass-border)', borderRadius: '8px' }}
+                  cursor={{fill: 'rgba(255,255,255,0.05)'}}
+                />
+                <Bar dataKey="avgDelay" name="Avg Delay" fill="#ef4444" radius={[0, 4, 4, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* Action Funnel Chart */}
+        <div className="chart-card glass-panel">
+          <h3>Action Funnel</h3>
+          <div className="chart-wrapper">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={actionFunnelData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
+                <XAxis dataKey="name" stroke="var(--text-muted)" />
+                <YAxis stroke="var(--text-muted)" />
+                <Tooltip 
+                  contentStyle={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--glass-border)', borderRadius: '8px' }}
+                  cursor={{fill: 'rgba(255,255,255,0.05)'}}
+                />
+                <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                  {actionFunnelData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.fill} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
           </div>
         </div>
       </div>
