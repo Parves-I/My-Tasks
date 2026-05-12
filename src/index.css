@@ -1,6 +1,7 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;600;800&display=swap');
 
 :root {
+  color-scheme: dark;
   /* Color Palette - Premium Dark Mode */
   --bg-primary: #0f111a;
   --bg-secondary: #161925;
@@ -175,10 +176,50 @@ input, select, textarea {
   outline: none;
   transition: border-color var(--transition-fast);
 }
+
+/* Dropdown option styling for dark mode */
+select {
+  background-color: var(--bg-secondary);
+  cursor: pointer;
+}
+
+option {
+  background-color: var(--bg-secondary);
+  color: var(--text-primary);
+  padding: 0.4rem 0.5rem;
+}
+
+option:hover, option:checked {
+  background-color: var(--accent-primary);
+  color: white;
+}
+
 input:focus, select:focus, textarea:focus {
   border-color: var(--accent-primary);
   box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
 }
 input::placeholder, textarea::placeholder {
   color: var(--text-muted);
+}
+
+/* Date & datetime-local inputs dark mode fix */
+input[type="date"],
+input[type="datetime-local"],
+input[type="time"] {
+  background-color: rgba(0, 0, 0, 0.2);
+  color: var(--text-primary);
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="datetime-local"]::-webkit-calendar-picker-indicator,
+input[type="time"]::-webkit-calendar-picker-indicator {
+  filter: invert(0.8);
+  cursor: pointer;
+  opacity: 0.7;
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator:hover,
+input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover,
+input[type="time"]::-webkit-calendar-picker-indicator:hover {
+  opacity: 1;
 }

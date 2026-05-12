@@ -46,16 +46,18 @@ const ProductivityDashboard = () => {
   const completedTasks = filteredTasks.filter(t => t.status === 'done').length;
   const completionRate = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
   
-  // Delayed = not done + delayedDays > 0 + dueDate is today (carry-forward brought them here)
-  const delayedTasks = filteredTasks.filter(t => 
-    t.status !== 'done' && t.delayedDays > 0 && isSameDay(startOfDay(new Date(t.dueDate)), today)
-  );
+  // Delayed = not done AND (overdue: dueDate is before today, OR carry-forwarded with delayedDays > 0)
+  const delayedTasks = filteredTasks.filter(t => {
+    if (t.status === 'done') return false;
+    const due = startOfDay(new Date(t.dueDate));
+    return isBefore(due, today) || t.delayedDays > 0;
+  });
   
-  // Pending = not done + dueDate is today or future (but NOT delayed)
+  // Pending = not done + NOT delayed
   const pendingTasks = filteredTasks.filter(t => {
     if (t.status === 'done') return false;
     const due = startOfDay(new Date(t.dueDate));
-    const isDelayed = t.delayedDays > 0 && isSameDay(due, today);
+    const isDelayed = isBefore(due, today) || t.delayedDays > 0;
     return !isDelayed;
   });
 
@@ -79,7 +81,7 @@ const ProductivityDashboard = () => {
       if (!map[t.category]) map[t.category] = { total: 0, completed: 0, delayed: 0, pending: 0 };
       map[t.category].total++;
       if (t.status === 'done') map[t.category].completed++;
-      else if (t.delayedDays > 0 && isSameDay(startOfDay(new Date(t.dueDate)), today)) map[t.category].delayed++;
+      else if (isBefore(startOfDay(new Date(t.dueDate)), today) || t.delayedDays > 0) map[t.category].delayed++;
       else map[t.category].pending++;
     });
     return Object.keys(map).map(cat => ({
@@ -209,7 +211,7 @@ const ProductivityDashboard = () => {
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', background: 'var(--glass-bg)', padding: '0.35rem 0.65rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--glass-border)' }}>
             <CalendarIcon size={14} style={{ color: 'var(--text-muted)' }} />
             <select value={timeRange} onChange={(e) => setTimeRange(e.target.value)}
-              style={{ background: 'transparent', border: 'none', color: 'var(--text-primary)', outline: 'none', cursor: 'pointer', fontSize: '0.82rem' }}>
+              style={{ border: 'none', color: 'var(--text-primary)', outline: 'none', cursor: 'pointer', fontSize: '0.82rem' }}>
               <option value="7days">Last 7 Days</option>
               <option value="month">This Month</option>
               <option value="year">This Year</option>
@@ -270,7 +272,7 @@ const ProductivityDashboard = () => {
           <div className="stat-content">
             <h3>Delayed</h3>
             <div className="stat-value">{delayedTasks.length}</div>
-            <p className="text-muted">Overdue today</p>
+            <p className="text-muted">Overdue / Delayed</p>
           </div>
         </div>
 
@@ -289,21 +291,24 @@ const ProductivityDashboard = () => {
       {/* Delayed Tasks Detail (if any) */}
       {delayedTasks.length > 0 && (
         <div className="chart-card glass-panel">
-          <h3 style={{ color: 'var(--accent-danger)' }}>⚠ Delayed Tasks Today ({delayedTasks.length})</h3>
+          <h3 style={{ color: 'var(--accent-danger)' }}>⚠ Delayed / Overdue Tasks ({delayedTasks.length})</h3>
           <div className="category-table-wrapper">
             <table className="category-table">
               <thead>
                 <tr><th>Task</th><th>Category</th><th>Priority</th><th>Delayed By</th></tr>
               </thead>
               <tbody>
-                {delayedTasks.map(t => (
-                  <tr key={t.id}>
-                    <td>{t.title}</td>
-                    <td>{t.category}</td>
-                    <td style={{ textTransform: 'capitalize' }}>{t.priority}</td>
-                    <td className="rate-bad">{t.delayedDays} {t.delayedDays === 1 ? 'day' : 'days'}</td>
-                  </tr>
-                ))}
+                {delayedTasks.map(t => {
+                  const overdueDays = t.delayedDays > 0 ? t.delayedDays : Math.max(1, differenceInDays(today, startOfDay(new Date(t.dueDate))));
+                  return (
+                    <tr key={t.id}>
+                      <td>{t.title}</td>
+                      <td>{t.category}</td>
+                      <td style={{ textTransform: 'capitalize' }}>{t.priority}</td>
+                      <td className="rate-bad">{overdueDays} {overdueDays === 1 ? 'day' : 'days'}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

@@ -14,7 +14,7 @@
 
 .dashboard-filter-bar select {
   width: auto;
-  background: transparent;
+  background-color: var(--bg-secondary);
   border: none;
   color: var(--text-primary);
   outline: none;
@@ -40,12 +40,13 @@
 
 .custom-date-range input[type="date"] {
   width: auto;
-  background: transparent;
-  border: none;
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--glass-border);
   color: var(--text-primary);
   font-size: 0.8rem;
   padding: 0.2rem 0.4rem;
   cursor: pointer;
+  border-radius: var(--radius-sm);
 }
 
 .custom-date-range input[type="date"]::-webkit-calendar-picker-indicator {
