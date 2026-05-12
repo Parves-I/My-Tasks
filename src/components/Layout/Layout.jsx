@@ -36,25 +36,25 @@ const Layout = ({ children }) => {
       {/* Sidebar Navigation */}
       <aside className="sidebar glass-panel">
         <div className="sidebar-brand">
-          <CheckSquare size={28} className="text-success" />
+          <CheckSquare size={22} className="text-success" />
           <h2>NotesApp</h2>
         </div>
 
         <nav className="sidebar-nav">
           <NavLink to="/calendar" className={({isActive}) => `nav-item ${isActive ? 'active' : ''}`}>
-            <Calendar size={20} />
+            <Calendar size={17} />
             <span>Calendar</span>
           </NavLink>
           
           <NavLink to="/dashboard" className={({isActive}) => `nav-item ${isActive ? 'active' : ''}`}>
-            <BarChart3 size={20} />
+            <BarChart3 size={17} />
             <span>Dashboard</span>
           </NavLink>
 
           <div className="nav-divider"></div>
 
           <button className="nav-item" onClick={() => setIsSettingsOpen(true)}>
-            <SettingsIcon size={20} />
+            <SettingsIcon size={17} />
             <span>Settings</span>
           </button>
         </nav>
@@ -80,7 +80,7 @@ const Layout = ({ children }) => {
           </div>
           <div className="header-actions">
             <button className="btn-primary" onClick={() => window.dispatchEvent(new CustomEvent('open-task-modal'))}>
-              <Plus size={18} />
+              <Plus size={15} />
               <span>New Task</span>
             </button>
           </div>

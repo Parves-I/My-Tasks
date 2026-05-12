@@ -3,64 +3,116 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, 
   PieChart, Pie, Cell, LineChart, Line, CartesianGrid
 } from 'recharts';
-import { format, subDays, startOfDay, isBefore, isSameDay, isWithinInterval, startOfMonth, endOfMonth, startOfYear, endOfYear } from 'date-fns';
+import { format, subDays, startOfDay, isBefore, isSameDay, isWithinInterval, startOfMonth, endOfMonth, startOfYear, endOfYear, differenceInDays, isAfter } from 'date-fns';
 import useTaskStore from '../../store/taskStore';
 import './Dashboard.css';
-import { CheckCircle, Clock, Target, Flame, Calendar as CalendarIcon, AlertCircle } from 'lucide-react';
+import { CheckCircle, Clock, Target, Flame, Calendar as CalendarIcon, AlertCircle, TrendingUp, ListChecks, Timer, Zap } from 'lucide-react';
 
-const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
+const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316'];
 
 const ProductivityDashboard = () => {
   const tasks = useTaskStore(state => state.tasks);
-  const [timeRange, setTimeRange] = useState('7days'); // '7days', 'month', 'year'
+  const [timeRange, setTimeRange] = useState('7days');
+  const [customFrom, setCustomFrom] = useState(format(subDays(new Date(), 30), 'yyyy-MM-dd'));
+  const [customTo, setCustomTo] = useState(format(new Date(), 'yyyy-MM-dd'));
 
   const today = startOfDay(new Date());
 
   // Filter tasks based on selected range
   const filteredTasks = useMemo(() => {
     return tasks.filter(t => {
-      const taskDate = new Date(t.dueDate);
+      const taskDue = startOfDay(new Date(t.dueDate));
+      const taskStart = startOfDay(new Date(t.startDate));
       if (timeRange === '7days') {
-        return isWithinInterval(taskDate, { start: subDays(today, 6), end: new Date(today.getTime() + 86400000 - 1) });
+        const rangeStart = subDays(today, 6);
+        return (isSameDay(taskDue, rangeStart) || isAfter(taskDue, rangeStart)) && (isSameDay(taskDue, today) || isBefore(taskDue, today));
       } else if (timeRange === 'month') {
-        return isWithinInterval(taskDate, { start: startOfMonth(today), end: endOfMonth(today) });
+        return isWithinInterval(taskDue, { start: startOfMonth(today), end: endOfMonth(today) });
       } else if (timeRange === 'year') {
-        return isWithinInterval(taskDate, { start: startOfYear(today), end: endOfYear(today) });
+        return isWithinInterval(taskDue, { start: startOfYear(today), end: endOfYear(today) });
+      } else if (timeRange === 'alltime') {
+        return isSameDay(taskDue, today) || isBefore(taskDue, today);
+      } else if (timeRange === 'custom') {
+        const from = startOfDay(new Date(customFrom));
+        const to = startOfDay(new Date(customTo + 'T23:59:59'));
+        return isWithinInterval(taskDue, { start: from, end: to });
       }
       return true;
     });
-  }, [tasks, timeRange, today]);
+  }, [tasks, timeRange, today, customFrom, customTo]);
 
-  // Compute metrics
+  // === CORE METRICS ===
   const totalTasks = filteredTasks.length;
   const completedTasks = filteredTasks.filter(t => t.status === 'done').length;
   const completionRate = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
   
-  // Category distribution
+  // Delayed = not done + delayedDays > 0 + dueDate is today (carry-forward brought them here)
+  const delayedTasks = filteredTasks.filter(t => 
+    t.status !== 'done' && t.delayedDays > 0 && isSameDay(startOfDay(new Date(t.dueDate)), today)
+  );
+  
+  // Pending = not done + dueDate is today or future (but NOT delayed)
+  const pendingTasks = filteredTasks.filter(t => {
+    if (t.status === 'done') return false;
+    const due = startOfDay(new Date(t.dueDate));
+    const isDelayed = t.delayedDays > 0 && isSameDay(due, today);
+    return !isDelayed;
+  });
+
+  const inProgressTasks = filteredTasks.filter(t => t.status === 'partially-completed').length;
+
+  // === CATEGORY DISTRIBUTION ===
   const categoryData = useMemo(() => {
     const counts = {};
     filteredTasks.forEach(t => {
       counts[t.category] = (counts[t.category] || 0) + 1;
     });
     return Object.keys(counts).map((key, index) => ({
-      name: key,
-      value: counts[key],
-      color: COLORS[index % COLORS.length]
+      name: key, value: counts[key], color: COLORS[index % COLORS.length]
     }));
   }, [filteredTasks]);
 
-  // Timeliness Data (On Time vs Late)
+  // === CATEGORY COMPLETION TABLE ===
+  const categoryTableData = useMemo(() => {
+    const map = {};
+    filteredTasks.forEach(t => {
+      if (!map[t.category]) map[t.category] = { total: 0, completed: 0, delayed: 0, pending: 0 };
+      map[t.category].total++;
+      if (t.status === 'done') map[t.category].completed++;
+      else if (t.delayedDays > 0 && isSameDay(startOfDay(new Date(t.dueDate)), today)) map[t.category].delayed++;
+      else map[t.category].pending++;
+    });
+    return Object.keys(map).map(cat => ({
+      name: cat,
+      ...map[cat],
+      rate: map[cat].total > 0 ? Math.round((map[cat].completed / map[cat].total) * 100) : 0
+    })).sort((a, b) => b.total - a.total);
+  }, [filteredTasks]);
+
+  // === PRIORITY BREAKDOWN ===
+  const priorityData = useMemo(() => {
+    const priorities = ['low', 'medium', 'high', 'urgent'];
+    return priorities.map(p => {
+      const all = filteredTasks.filter(t => t.priority === p);
+      return {
+        name: p.charAt(0).toUpperCase() + p.slice(1),
+        completed: all.filter(t => t.status === 'done').length,
+        incomplete: all.filter(t => t.status !== 'done').length
+      };
+    });
+  }, [filteredTasks]);
+
+  // === TIMELINESS ===
   const timelinessData = useMemo(() => {
-    let onTime = 0;
-    let late = 0;
+    let onTime = 0, late = 0;
     filteredTasks.forEach(t => {
       if (t.status === 'done') {
-        const due = startOfDay(new Date(t.dueDate));
-        const completed = t.completedAt ? startOfDay(new Date(t.completedAt)) : startOfDay(new Date());
-        if (isBefore(due, completed) || t.delayedDays > 0) {
-          late++;
-        } else {
-          onTime++;
+        if (t.delayedDays > 0) late++;
+        else {
+          const due = startOfDay(new Date(t.dueDate));
+          const completed = t.completedAt ? startOfDay(new Date(t.completedAt)) : today;
+          if (isAfter(completed, due)) late++;
+          else onTime++;
         }
       }
     });
@@ -70,204 +122,288 @@ const ProductivityDashboard = () => {
     ];
   }, [filteredTasks]);
 
-  // Category Delay Analysis
+  // === CATEGORY DELAY ===
   const categoryDelayData = useMemo(() => {
     const delayMap = {};
     filteredTasks.forEach(t => {
-      if (!delayMap[t.category]) {
-        delayMap[t.category] = { totalDelay: 0, count: 0 };
-      }
+      if (!delayMap[t.category]) delayMap[t.category] = { totalDelay: 0, count: 0 };
       delayMap[t.category].count++;
       delayMap[t.category].totalDelay += (t.delayedDays || 0);
     });
-    
-    return Object.keys(delayMap).map(category => ({
-      name: category,
-      avgDelay: delayMap[category].count > 0 
-        ? Number((delayMap[category].totalDelay / delayMap[category].count).toFixed(1)) 
-        : 0
+    return Object.keys(delayMap).map(cat => ({
+      name: cat,
+      avgDelay: delayMap[cat].count > 0 ? Number((delayMap[cat].totalDelay / delayMap[cat].count).toFixed(1)) : 0
     })).sort((a, b) => b.avgDelay - a.avgDelay);
   }, [filteredTasks]);
 
-  // Action Funnel (Skipped/Delayed vs Completed)
-  const actionFunnelData = useMemo(() => {
-    let carriedForward = 0;
-    let completed = 0;
-    filteredTasks.forEach(t => {
-      if (t.wasCarriedForward || t.delayedDays > 0) {
-        carriedForward++;
-      }
-      if (t.status === 'done') {
-        completed++;
-      }
-    });
-    return [
-      { name: 'Completed', value: completed, fill: '#6366f1' },
-      { name: 'Skipped / Delayed', value: carriedForward, fill: '#f59e0b' }
-    ];
-  }, [filteredTasks]);
-
-  // Dynamic Activity Line Chart Data
+  // === ACTIVITY LINE CHART ===
   const chartData = useMemo(() => {
     const data = [];
     if (timeRange === '7days') {
       for (let i = 6; i >= 0; i--) {
         const date = subDays(today, i);
-        const periodTasks = tasks.filter(t => isSameDay(new Date(t.dueDate), date));
-        data.push({
-          name: format(date, 'EEE'),
-          completed: periodTasks.filter(t => t.status === 'done').length,
-          added: periodTasks.length
-        });
+        const dayTasks = tasks.filter(t => isSameDay(new Date(t.dueDate), date));
+        data.push({ name: format(date, 'EEE'), completed: dayTasks.filter(t => t.status === 'done').length, added: dayTasks.length });
       }
     } else if (timeRange === 'month') {
       const daysInMonth = endOfMonth(today).getDate();
-      for(let i=1; i<=daysInMonth; i+=3) { // Group every 3 days to avoid too many points
+      for (let i = 1; i <= daysInMonth; i += 3) {
         const date = new Date(today.getFullYear(), today.getMonth(), i);
-        const periodTasks = tasks.filter(t => {
-           const d = new Date(t.dueDate);
-           return d.getMonth() === today.getMonth() && d.getDate() >= i && d.getDate() < i + 3;
-        });
-        data.push({
-          name: format(date, 'd MMM'),
-          completed: periodTasks.filter(t => t.status === 'done').length,
-          added: periodTasks.length
-        });
+        const dayTasks = tasks.filter(t => { const d = new Date(t.dueDate); return d.getMonth() === today.getMonth() && d.getDate() >= i && d.getDate() < i + 3; });
+        data.push({ name: format(date, 'd MMM'), completed: dayTasks.filter(t => t.status === 'done').length, added: dayTasks.length });
       }
     } else if (timeRange === 'year') {
-      for(let i=0; i<12; i++) {
+      for (let i = 0; i < 12; i++) {
         const date = new Date(today.getFullYear(), i, 1);
-        const periodTasks = tasks.filter(t => {
-           const d = new Date(t.dueDate);
-           return d.getMonth() === i && d.getFullYear() === today.getFullYear();
-        });
-        data.push({
-          name: format(date, 'MMM'),
-          completed: periodTasks.filter(t => t.status === 'done').length,
-          added: periodTasks.length
-        });
+        const monthTasks = tasks.filter(t => { const d = new Date(t.dueDate); return d.getMonth() === i && d.getFullYear() === today.getFullYear(); });
+        data.push({ name: format(date, 'MMM'), completed: monthTasks.filter(t => t.status === 'done').length, added: monthTasks.length });
+      }
+    } else if (timeRange === 'alltime' || timeRange === 'custom') {
+      const from = timeRange === 'custom' ? startOfDay(new Date(customFrom)) : (tasks.length > 0 ? startOfDay(new Date(Math.min(...tasks.map(t => new Date(t.dueDate).getTime())))) : subDays(today, 30));
+      const to = timeRange === 'custom' ? startOfDay(new Date(customTo)) : today;
+      const totalDays = differenceInDays(to, from) + 1;
+      const step = Math.max(1, Math.floor(totalDays / 15));
+      for (let i = 0; i < totalDays; i += step) {
+        const date = new Date(from.getTime() + i * 86400000);
+        const endDate = new Date(from.getTime() + Math.min(i + step, totalDays) * 86400000);
+        const periodTasks = tasks.filter(t => { const d = new Date(t.dueDate); return d >= date && d < endDate; });
+        data.push({ name: format(date, totalDays > 60 ? 'MMM d' : 'd MMM'), completed: periodTasks.filter(t => t.status === 'done').length, added: periodTasks.length });
       }
     }
     return data;
-  }, [tasks, timeRange, today]);
+  }, [tasks, timeRange, today, customFrom, customTo]);
 
-  const rangeLabel = timeRange === '7days' ? 'Last 7 Days' : timeRange === 'month' ? 'This Month' : 'This Year';
+  // === PRODUCTIVITY SCORE ===
+  const productivityScore = useMemo(() => {
+    if (totalTasks === 0) return { score: 0, completionPts: 0, timelinePts: 0, delayPenalty: 0 };
+    const completionPts = Math.round(completionRate * 0.6);
+    const onTimeCount = timelinessData[0]?.value || 0;
+    const lateCount = timelinessData[1]?.value || 0;
+    const timelinePts = completedTasks > 0 ? Math.round((onTimeCount / completedTasks) * 30) : 0;
+    const delayPenalty = Math.min(10, Math.round((delayedTasks.length / totalTasks) * 30));
+    const score = Math.max(0, Math.min(100, completionPts + timelinePts - delayPenalty));
+    return { score, completionPts, timelinePts, delayPenalty };
+  }, [totalTasks, completionRate, timelinessData, completedTasks, delayedTasks]);
+
+  // === DAILY AVERAGE ===
+  const dailyAverage = useMemo(() => {
+    if (completedTasks === 0) return 0;
+    let rangeDays = 7;
+    if (timeRange === 'month') rangeDays = endOfMonth(today).getDate();
+    else if (timeRange === 'year') rangeDays = 365;
+    else if (timeRange === 'alltime') rangeDays = Math.max(1, differenceInDays(today, tasks.length > 0 ? new Date(Math.min(...tasks.map(t => new Date(t.createdAt || t.dueDate).getTime()))) : today) + 1);
+    else if (timeRange === 'custom') rangeDays = Math.max(1, differenceInDays(new Date(customTo), new Date(customFrom)) + 1);
+    return (completedTasks / rangeDays).toFixed(1);
+  }, [completedTasks, timeRange, today, tasks, customFrom, customTo]);
+
+  const scoreClass = productivityScore.score >= 80 ? 'score-excellent' : productivityScore.score >= 60 ? 'score-good' : productivityScore.score >= 40 ? 'score-average' : 'score-poor';
+
+  const rangeLabel = timeRange === '7days' ? 'Last 7 Days' : timeRange === 'month' ? 'This Month' : timeRange === 'year' ? 'This Year' : timeRange === 'alltime' ? 'All Time' : `${customFrom} to ${customTo}`;
 
   return (
     <div className="dashboard-container">
-      <div className="dashboard-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-        <h2>Productivity Overview</h2>
-        
-        <div className="dashboard-filter" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'var(--glass-bg)', padding: '0.5rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--glass-border)' }}>
-          <CalendarIcon size={18} style={{ color: 'var(--text-muted)' }} />
-          <select 
-            value={timeRange} 
-            onChange={(e) => setTimeRange(e.target.value)}
-            style={{ background: 'transparent', border: 'none', color: 'var(--text-primary)', outline: 'none', cursor: 'pointer', fontSize: '0.95rem' }}
-          >
-            <option value="7days">Last 7 Days</option>
-            <option value="month">This Month</option>
-            <option value="year">This Year</option>
-          </select>
+      {/* Filter Bar */}
+      <div className="dashboard-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+        <h2 style={{ fontSize: '1.1rem' }}>Productivity Overview</h2>
+        <div className="dashboard-filter-bar">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', background: 'var(--glass-bg)', padding: '0.35rem 0.65rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--glass-border)' }}>
+            <CalendarIcon size={14} style={{ color: 'var(--text-muted)' }} />
+            <select value={timeRange} onChange={(e) => setTimeRange(e.target.value)}
+              style={{ background: 'transparent', border: 'none', color: 'var(--text-primary)', outline: 'none', cursor: 'pointer', fontSize: '0.82rem' }}>
+              <option value="7days">Last 7 Days</option>
+              <option value="month">This Month</option>
+              <option value="year">This Year</option>
+              <option value="alltime">All Time (Till Today)</option>
+              <option value="custom">Custom Range</option>
+            </select>
+          </div>
+          {timeRange === 'custom' && (
+            <div className="custom-date-range">
+              <label>From</label>
+              <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)} />
+              <label>To</label>
+              <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)} />
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Stats row */}
+      {/* Status Summary */}
       <div className="stats-grid">
         <div className="stat-card glass-panel">
-          <div className="stat-icon" style={{background: 'rgba(16, 185, 129, 0.1)', color: 'var(--accent-success)'}}>
-            <CheckCircle size={24} />
+          <div className="stat-icon" style={{background: 'rgba(99, 102, 241, 0.1)', color: 'var(--accent-primary)'}}>
+            <ListChecks size={18} />
           </div>
           <div className="stat-content">
-            <h3>Completion Rate</h3>
-            <div className="stat-value">{completionRate}%</div>
-            <p className="text-muted">{completedTasks} of {totalTasks} tasks done</p>
+            <h3>Total Tasks</h3>
+            <div className="stat-value">{totalTasks}</div>
+            <p className="text-muted">{rangeLabel}</p>
           </div>
         </div>
 
         <div className="stat-card glass-panel">
-          <div className="stat-icon" style={{background: 'rgba(99, 102, 241, 0.1)', color: 'var(--accent-primary)'}}>
-            <Target size={24} />
+          <div className="stat-icon" style={{background: 'rgba(16, 185, 129, 0.1)', color: 'var(--accent-success)'}}>
+            <CheckCircle size={18} />
           </div>
           <div className="stat-content">
-            <h3>Tasks Completed</h3>
+            <h3>Completed</h3>
             <div className="stat-value">{completedTasks}</div>
-            <p className="text-muted">In {rangeLabel.toLowerCase()}</p>
+            <p className="text-muted">{completionRate}% rate</p>
           </div>
         </div>
 
         <div className="stat-card glass-panel">
           <div className="stat-icon" style={{background: 'rgba(245, 158, 11, 0.1)', color: 'var(--accent-warning)'}}>
-            <Flame size={24} />
+            <Clock size={18} />
           </div>
           <div className="stat-content">
-            <h3>Total Scheduled</h3>
-            <div className="stat-value">{totalTasks}</div>
-            <p className="text-muted">In {rangeLabel.toLowerCase()}</p>
+            <h3>Pending</h3>
+            <div className="stat-value">{pendingTasks.length}</div>
+            <p className="text-muted">Awaiting completion</p>
           </div>
         </div>
 
         <div className="stat-card glass-panel">
-          <div className="stat-icon" style={{background: 'rgba(239, 68, 68, 0.1)', color: 'var(--danger-color)'}}>
-            <AlertCircle size={24} />
+          <div className="stat-icon" style={{background: 'rgba(239, 68, 68, 0.1)', color: 'var(--accent-danger)'}}>
+            <AlertCircle size={18} />
           </div>
           <div className="stat-content">
-            <h3>Overdue / Delayed</h3>
-            <div className="stat-value">{filteredTasks.filter(t => t.delayedDays > 0 || (t.status !== 'done' && isBefore(new Date(t.dueDate), today))).length}</div>
-            <p className="text-muted">In {rangeLabel.toLowerCase()}</p>
+            <h3>Delayed</h3>
+            <div className="stat-value">{delayedTasks.length}</div>
+            <p className="text-muted">Overdue today</p>
+          </div>
+        </div>
+
+        <div className="stat-card glass-panel">
+          <div className="stat-icon" style={{background: 'rgba(139, 92, 246, 0.1)', color: '#8b5cf6'}}>
+            <Zap size={18} />
+          </div>
+          <div className="stat-content">
+            <h3>Daily Avg</h3>
+            <div className="stat-value">{dailyAverage}</div>
+            <p className="text-muted">Tasks/day</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Delayed Tasks Detail (if any) */}
+      {delayedTasks.length > 0 && (
+        <div className="chart-card glass-panel">
+          <h3 style={{ color: 'var(--accent-danger)' }}>⚠ Delayed Tasks Today ({delayedTasks.length})</h3>
+          <div className="category-table-wrapper">
+            <table className="category-table">
+              <thead>
+                <tr><th>Task</th><th>Category</th><th>Priority</th><th>Delayed By</th></tr>
+              </thead>
+              <tbody>
+                {delayedTasks.map(t => (
+                  <tr key={t.id}>
+                    <td>{t.title}</td>
+                    <td>{t.category}</td>
+                    <td style={{ textTransform: 'capitalize' }}>{t.priority}</td>
+                    <td className="rate-bad">{t.delayedDays} {t.delayedDays === 1 ? 'day' : 'days'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Productivity Score + Category Table Row */}
+      <div className="charts-grid">
+        <div className="chart-card glass-panel">
+          <h3>Productivity Score</h3>
+          <div className="productivity-score-section">
+            <div className={`score-circle ${scoreClass}`}>
+              {productivityScore.score}
+              <span className="score-label">Score</span>
+            </div>
+            <div className="score-breakdown">
+              <div className="score-detail"><span>Completion (60%)</span><span>+{productivityScore.completionPts}</span></div>
+              <div className="score-detail"><span>On-Time (30%)</span><span>+{productivityScore.timelinePts}</span></div>
+              <div className="score-detail"><span>Delay Penalty</span><span style={{color: 'var(--accent-danger)'}}>-{productivityScore.delayPenalty}</span></div>
+              <div className="score-detail" style={{ borderTop: '1px solid var(--glass-border)', paddingTop: '0.3rem', marginTop: '0.2rem' }}>
+                <span style={{ fontWeight: 600 }}>Final Score</span>
+                <span style={{ fontWeight: 700, fontSize: '1rem' }}>{productivityScore.score}/100</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="chart-card glass-panel">
+          <h3>Category Completion</h3>
+          <div className="category-table-wrapper">
+            <table className="category-table">
+              <thead>
+                <tr><th>Category</th><th>Total</th><th>Done</th><th>Pending</th><th>Delayed</th><th>Rate</th></tr>
+              </thead>
+              <tbody>
+                {categoryTableData.map(c => (
+                  <tr key={c.name}>
+                    <td>{c.name}</td>
+                    <td>{c.total}</td>
+                    <td style={{color: 'var(--accent-success)'}}>{c.completed}</td>
+                    <td style={{color: 'var(--accent-warning)'}}>{c.pending}</td>
+                    <td style={{color: 'var(--accent-danger)'}}>{c.delayed}</td>
+                    <td className={`rate-cell ${c.rate >= 70 ? 'rate-good' : c.rate >= 40 ? 'rate-ok' : 'rate-bad'}`}>{c.rate}%</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       </div>
 
       <div className="charts-grid">
-        {/* Activity Line Chart */}
+        {/* Activity Trend */}
         <div className="chart-card glass-panel full-width">
           <h3>Activity Trend ({rangeLabel})</h3>
           <div className="chart-wrapper">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={chartData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                <XAxis dataKey="name" stroke="var(--text-muted)" />
-                <YAxis stroke="var(--text-muted)" />
-                <Tooltip 
-                  contentStyle={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--glass-border)', borderRadius: '8px' }}
-                />
-                <Line type="monotone" dataKey="completed" name="Completed" stroke="var(--accent-success)" strokeWidth={3} dot={{r: 4}} />
-                <Line type="monotone" dataKey="added" name="Added/Scheduled" stroke="var(--accent-primary)" strokeWidth={3} dot={{r: 4}} />
+                <XAxis dataKey="name" stroke="var(--text-muted)" tick={{fontSize: 11}} />
+                <YAxis stroke="var(--text-muted)" tick={{fontSize: 11}} />
+                <Tooltip contentStyle={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--glass-border)', borderRadius: '8px', fontSize: '0.8rem' }} />
+                <Line type="monotone" dataKey="completed" name="Completed" stroke="var(--accent-success)" strokeWidth={2} dot={{r: 3}} />
+                <Line type="monotone" dataKey="added" name="Scheduled" stroke="var(--accent-primary)" strokeWidth={2} dot={{r: 3}} />
               </LineChart>
             </ResponsiveContainer>
           </div>
         </div>
 
-        {/* Category Breakdown Pie Chart */}
+        {/* Priority Breakdown */}
+        <div className="chart-card glass-panel">
+          <h3>Priority Breakdown</h3>
+          <div className="chart-wrapper">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={priorityData} margin={{ top: 10, right: 20, left: 0, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
+                <XAxis dataKey="name" stroke="var(--text-muted)" tick={{fontSize: 11}} />
+                <YAxis stroke="var(--text-muted)" tick={{fontSize: 11}} />
+                <Tooltip contentStyle={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--glass-border)', borderRadius: '8px', fontSize: '0.8rem' }} />
+                <Bar dataKey="completed" name="Completed" stackId="a" fill="#10b981" radius={[0, 0, 0, 0]} />
+                <Bar dataKey="incomplete" name="Incomplete" stackId="a" fill="#ef4444" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* Categories Pie */}
         <div className="chart-card glass-panel">
           <h3>Categories ({rangeLabel})</h3>
           <div className="chart-wrapper">
             {categoryData.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
-                  <Pie
-                    data={categoryData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={60}
-                    outerRadius={80}
-                    paddingAngle={5}
-                    dataKey="value"
-                  >
-                    {categoryData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
+                  <Pie data={categoryData} cx="50%" cy="50%" innerRadius={50} outerRadius={70} paddingAngle={4} dataKey="value">
+                    {categoryData.map((entry, index) => (<Cell key={`cell-${index}`} fill={entry.color} />))}
                   </Pie>
-                  <Tooltip 
-                    contentStyle={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--glass-border)', borderRadius: '8px' }}
-                  />
+                  <Tooltip contentStyle={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--glass-border)', borderRadius: '8px', fontSize: '0.8rem' }} />
                 </PieChart>
               </ResponsiveContainer>
-            ) : (
-              <div className="empty-chart">No tasks available in this period</div>
-            )}
-            
+            ) : (<div className="empty-chart">No tasks in this period</div>)}
             <div className="chart-legend">
               {categoryData.map(c => (
                 <div key={c.name} className="legend-item">
@@ -279,34 +415,20 @@ const ProductivityDashboard = () => {
           </div>
         </div>
 
-        {/* Timeliness Pie Chart */}
+        {/* Timeliness */}
         <div className="chart-card glass-panel">
           <h3>Completion Timeliness</h3>
           <div className="chart-wrapper">
             {timelinessData.some(d => d.value > 0) ? (
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
-                  <Pie
-                    data={timelinessData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={60}
-                    outerRadius={80}
-                    paddingAngle={5}
-                    dataKey="value"
-                  >
-                    {timelinessData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
+                  <Pie data={timelinessData} cx="50%" cy="50%" innerRadius={50} outerRadius={70} paddingAngle={4} dataKey="value">
+                    {timelinessData.map((entry, index) => (<Cell key={`cell-${index}`} fill={entry.color} />))}
                   </Pie>
-                  <Tooltip 
-                    contentStyle={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--glass-border)', borderRadius: '8px' }}
-                  />
+                  <Tooltip contentStyle={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--glass-border)', borderRadius: '8px', fontSize: '0.8rem' }} />
                 </PieChart>
               </ResponsiveContainer>
-            ) : (
-              <div className="empty-chart">No completed tasks</div>
-            )}
+            ) : (<div className="empty-chart">No completed tasks</div>)}
             <div className="chart-legend">
               {timelinessData.map(c => (
                 <div key={c.name} className="legend-item">
@@ -318,43 +440,17 @@ const ProductivityDashboard = () => {
           </div>
         </div>
 
-        {/* Category Delay Chart */}
+        {/* Avg Delay by Category */}
         <div className="chart-card glass-panel">
           <h3>Avg Delay by Category (Days)</h3>
           <div className="chart-wrapper">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={categoryDelayData} layout="vertical" margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+              <BarChart data={categoryDelayData} layout="vertical" margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" horizontal={false} />
-                <XAxis type="number" stroke="var(--text-muted)" />
-                <YAxis dataKey="name" type="category" stroke="var(--text-muted)" width={80} />
-                <Tooltip 
-                  contentStyle={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--glass-border)', borderRadius: '8px' }}
-                  cursor={{fill: 'rgba(255,255,255,0.05)'}}
-                />
+                <XAxis type="number" stroke="var(--text-muted)" tick={{fontSize: 11}} />
+                <YAxis dataKey="name" type="category" stroke="var(--text-muted)" width={70} tick={{fontSize: 11}} />
+                <Tooltip contentStyle={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--glass-border)', borderRadius: '8px', fontSize: '0.8rem' }} cursor={{fill: 'rgba(255,255,255,0.05)'}} />
                 <Bar dataKey="avgDelay" name="Avg Delay" fill="#ef4444" radius={[0, 4, 4, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        {/* Action Funnel Chart */}
-        <div className="chart-card glass-panel">
-          <h3>Action Funnel</h3>
-          <div className="chart-wrapper">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={actionFunnelData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
-                <XAxis dataKey="name" stroke="var(--text-muted)" />
-                <YAxis stroke="var(--text-muted)" />
-                <Tooltip 
-                  contentStyle={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--glass-border)', borderRadius: '8px' }}
-                  cursor={{fill: 'rgba(255,255,255,0.05)'}}
-                />
-                <Bar dataKey="value" radius={[4, 4, 0, 0]}>
-                  {actionFunnelData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.fill} />
-                  ))}
-                </Bar>
               </BarChart>
             </ResponsiveContainer>
           </div>
