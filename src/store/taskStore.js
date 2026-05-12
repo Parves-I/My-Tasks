@@ -3,13 +3,14 @@ import { persist } from 'zustand/middleware';
 import { v4 as uuidv4 } from 'uuid';
 import { isBefore, startOfDay, isSameDay, eachDayOfInterval, format } from 'date-fns';
 import { db } from '../firebase';
-import { doc, setDoc, deleteDoc, updateDoc, collection, writeBatch, onSnapshot } from 'firebase/firestore';
+import { doc, setDoc, getDoc, deleteDoc, updateDoc, collection, writeBatch, onSnapshot } from 'firebase/firestore';
 
 const useTaskStore = create(
   persist(
     (set, get) => ({
       tasks: [],
       categories: ['Work', 'Personal', 'Health', 'Learning', 'Errands'],
+      defaultCategories: ['Work', 'Personal', 'Health', 'Learning', 'Errands'],
       selectedTasks: [], // For bulk operations
       searchQuery: '',
       isFirebaseInitialized: false,
@@ -18,12 +19,33 @@ const useTaskStore = create(
 
       initFirebase: () => {
         if (get().isFirebaseInitialized) return;
+        
+        // Listen to tasks collection
         const tasksCol = collection(db, 'tasks');
         onSnapshot(tasksCol, (snapshot) => {
           const tasksData = snapshot.docs.map(doc => doc.data());
           set({ tasks: tasksData, isFirebaseInitialized: true });
         }, (error) => {
           console.error("Firebase sync error:", error);
+        });
+
+        // Load categories from Firebase
+        const categoriesRef = doc(db, 'settings', 'categories');
+        onSnapshot(categoriesRef, (docSnap) => {
+          if (docSnap.exists()) {
+            const fbCategories = docSnap.data().list || [];
+            if (fbCategories.length > 0) {
+              set({ categories: fbCategories });
+            }
+          } else {
+            // First time: save current defaults to Firebase
+            const currentCats = get().categories;
+            setDoc(categoriesRef, { list: currentCats }).catch(e => 
+              console.error("Failed to init categories in Firebase", e)
+            );
+          }
+        }, (error) => {
+          console.error("Firebase categories sync error:", error);
         });
       },
 
@@ -301,16 +323,28 @@ const useTaskStore = create(
       },
 
       // Category Management
-      addCategory: (cat) => set((state) => {
-        if(!state.categories.includes(cat)) {
-          return { categories: [...state.categories, cat] };
+      addCategory: async (cat) => {
+        const state = get();
+        if (!state.categories.includes(cat)) {
+          const updated = [...state.categories, cat];
+          set({ categories: updated });
+          try {
+            await setDoc(doc(db, 'settings', 'categories'), { list: updated });
+          } catch (e) {
+            console.error("Failed to sync category add to Firebase", e);
+          }
         }
-        return state;
-      }),
+      },
       
-      removeCategory: (cat) => set((state) => ({
-        categories: state.categories.filter(c => c !== cat)
-      })),
+      removeCategory: async (cat) => {
+        const updated = get().categories.filter(c => c !== cat);
+        set({ categories: updated });
+        try {
+          await setDoc(doc(db, 'settings', 'categories'), { list: updated });
+        } catch (e) {
+          console.error("Failed to sync category remove to Firebase", e);
+        }
+      },
 
       // Data Management
       clearAllTasks: async () => {
