@@ -125,18 +125,50 @@ const ProductivityDashboard = () => {
   }, [filteredTasks]);
 
   // === CATEGORY DELAY ===
+  // Only counts tasks that are actually delayed:
+  // 1. Completed late (done after due date)
+  // 2. Still overdue (not done, past due date)
   const categoryDelayData = useMemo(() => {
     const delayMap = {};
     filteredTasks.forEach(t => {
-      if (!delayMap[t.category]) delayMap[t.category] = { totalDelay: 0, count: 0 };
-      delayMap[t.category].count++;
-      delayMap[t.category].totalDelay += (t.delayedDays || 0);
+      const due = startOfDay(new Date(t.dueDate));
+      let delayDays = 0;
+      let isDelayed = false;
+
+      if (t.status === 'done') {
+        // Completed late: check completedAt vs dueDate, or use delayedDays
+        if (t.completedAt) {
+          const completed = startOfDay(new Date(t.completedAt));
+          if (isAfter(completed, due)) {
+            delayDays = differenceInDays(completed, due);
+            isDelayed = true;
+          }
+        } else if (t.delayedDays > 0) {
+          delayDays = t.delayedDays;
+          isDelayed = true;
+        }
+      } else {
+        // Still open & overdue
+        if (isBefore(due, today)) {
+          delayDays = differenceInDays(today, due);
+          isDelayed = true;
+        } else if (t.delayedDays > 0) {
+          delayDays = t.delayedDays;
+          isDelayed = true;
+        }
+      }
+
+      if (isDelayed && delayDays > 0) {
+        if (!delayMap[t.category]) delayMap[t.category] = { totalDelay: 0, count: 0 };
+        delayMap[t.category].count++;
+        delayMap[t.category].totalDelay += delayDays;
+      }
     });
     return Object.keys(delayMap).map(cat => ({
       name: cat,
       avgDelay: delayMap[cat].count > 0 ? Number((delayMap[cat].totalDelay / delayMap[cat].count).toFixed(1)) : 0
     })).sort((a, b) => b.avgDelay - a.avgDelay);
-  }, [filteredTasks]);
+  }, [filteredTasks, today]);
 
   // === ACTIVITY LINE CHART ===
   const chartData = useMemo(() => {
@@ -331,6 +363,32 @@ const ProductivityDashboard = () => {
               <div className="score-detail" style={{ borderTop: '1px solid var(--glass-border)', paddingTop: '0.3rem', marginTop: '0.2rem' }}>
                 <span style={{ fontWeight: 600 }}>Final Score</span>
                 <span style={{ fontWeight: 700, fontSize: '1rem' }}>{productivityScore.score}/100</span>
+              </div>
+            </div>
+            <div className="score-stats-grid">
+              <div className="score-stat-item">
+                <span className="score-stat-value">{totalTasks}</span>
+                <span className="score-stat-label">Total</span>
+              </div>
+              <div className="score-stat-item">
+                <span className="score-stat-value" style={{color: 'var(--accent-success)'}}>{completedTasks}</span>
+                <span className="score-stat-label">Completed</span>
+              </div>
+              <div className="score-stat-item">
+                <span className="score-stat-value" style={{color: '#10b981'}}>{timelinessData[0]?.value || 0}</span>
+                <span className="score-stat-label">On-Time</span>
+              </div>
+              <div className="score-stat-item">
+                <span className="score-stat-value" style={{color: 'var(--accent-danger)'}}>{timelinessData[1]?.value || 0}</span>
+                <span className="score-stat-label">Late</span>
+              </div>
+              <div className="score-stat-item">
+                <span className="score-stat-value" style={{color: 'var(--accent-warning)'}}>{pendingTasks.length}</span>
+                <span className="score-stat-label">Pending</span>
+              </div>
+              <div className="score-stat-item">
+                <span className="score-stat-value" style={{color: '#ef4444'}}>{delayedTasks.length}</span>
+                <span className="score-stat-label">Delayed</span>
               </div>
             </div>
           </div>
